@@ -151,17 +151,32 @@ class OutlierCleaner:
             raise Exception("Method not supported.")
         return self.df
 
-# def getSymptomList(train, index):
-#   global symptom_set
-#   global symptom_dict
-#   symptoms = train_ohe.loc[index, 'symptoms']
-#   if symptoms is np.NaN:
-#     return [np.NaN]*len(symptom_set)
-#   res = [0]*len(symptom_set)
-#   symptoms = symptoms.split(';')
-#   for symptom in symptoms:
-#     res[symptom_dict[symptom]] = 1
-#   return res
+
+class SymptomExtracter:
+    def __init__(self, df) -> None:
+        self.df = df
+        self.symptom_set = set()
+        for symptoms in self.df.symptoms:
+            if symptoms is np.NaN:
+                continue
+            symptoms = symptoms.split(';')
+            self.symptom_set = self.symptom_set.union(set(symptoms))
+        self.symptom_dict = dict(
+            zip(self.symptom_set, range(len(self.symptom_set))))
+
+    def getSymptomList(self, entry_index):
+        '''
+        Returns the symptom list that the patient at index <entry_index> has in the <df> dataframe.
+        Assumes the existence of the column 'symptoms' that has a list of features seperated by a ';' character.
+        '''
+        symptoms = self.df.loc[entry_index, 'symptoms']
+        if symptoms is np.NaN:
+            return [np.NaN]*len(self.symptom_set)
+        res = [0]*len(self.symptom_set)
+        symptoms = symptoms.split(';')
+        for symptom in symptoms:
+            res[self.symptom_dict[symptom]] = 1
+        return res
 
 
 def date_to_num(date: str) -> int:
