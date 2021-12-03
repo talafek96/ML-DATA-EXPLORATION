@@ -79,9 +79,100 @@ class DataImputer:
         return
 
 
+class OutlierCleaner:
+    def __init__(self, df: pd.DataFrame):
+        self.df = df
+        return
+
+    def __z_score_clean(self, column, lowest, highest):
+        if lowest is None:
+            lowest = self.df[column].mean() - 3*self.df[column].std()
+        if highest is None:
+            highest = self.df[column].mean() + 3*self.df[column].std()
+        self.df[column] = np.where(
+            self.df[column] > highest,
+            highest,
+            np.where(
+                self.df[column] < lowest,
+                lowest,
+                self.df[column]
+            )
+        )
+
+    def __iqr_clean(self, column, lowest, highest):
+        percentile25 = self.df[column].quantile(0.25)
+        percentile75 = self.df[column].quantile(0.75)
+        iqr = percentile75 - percentile25
+        if lowest is None:
+            lowest = percentile25 - 1.5*iqr
+        if highest is None:
+            highest = percentile75 + 1.5*iqr
+        self.df[column] = np.where(
+            self.df[column] > highest,
+            highest,
+            np.where(
+                self.df[column] < lowest,
+                lowest,
+                self.df[column]
+            )
+        )
+
+    def z_score_filter(self, column):
+        highest = self.df[column].mean() + 3*self.df[column].std()
+        lowest = self.df[column].mean() - 3*self.df[column].std()
+        return self.df[(self.df[column] > highest) | (self.df[column] < lowest)]
+
+    def iqr_filter(self, column):
+        percentile25 = self.df[column].quantile(0.25)
+        percentile75 = self.df[column].quantile(0.75)
+        iqr = percentile75 - percentile25
+        highest = percentile75 + 1.5*iqr
+        lowest = percentile25 - 1.5*iqr
+        return self.df[(self.df[column] > highest) | (self.df[column] < lowest)]
+
+    def clean_outliers(self, column, filter, lowest=None, highest=None):
+        '''
+        Cleans the outliers of the column of the dataframe managed in the class *in-place*.
+
+                Parameters:
+                        column (str): The feature's column to be cleaned from outliers.
+                        filter (str): The cleaning method. Either 'z-score' or 'iqr'.
+                        lowest (Optional[int]): If the filter 'iqr' was chosen and lowest was stated, the bottom bound will be set to this value.
+                        highest (Optional[int]): If the filter 'iqr' was chosen and highest was stated, the upper bound will be set to this value.
+
+                Returns:
+                        The dataframe managed in the class (the original, to allow pipelining).
+        '''
+        if filter.lower() == 'z_score':
+            self.__z_score_clean(self.df, column, lowest, highest)
+        elif filter.lower() == 'iqr':
+            self.__iqr_clean(self.df, column, lowest, highest)
+        else:
+            raise Exception("Method not supported.")
+        return self.df
+
+# def getSymptomList(train, index):
+#   global symptom_set
+#   global symptom_dict
+#   symptoms = train_ohe.loc[index, 'symptoms']
+#   if symptoms is np.NaN:
+#     return [np.NaN]*len(symptom_set)
+#   res = [0]*len(symptom_set)
+#   symptoms = symptoms.split(';')
+#   for symptom in symptoms:
+#     res[symptom_dict[symptom]] = 1
+#   return res
+
+
+def date_to_num(date: str) -> int:
+    regex = r'(\d{4})-(\d{2})-(\d{2})'
+    match = re.search(regex, date)
+    return int(match.group(1) + match.group(2) + match.group(3))
+
+
 def prepare_data(data, training_data):
     '''
-    Returns the sum of two decimal numbers in binary digits.
+    Returns a cleaned copy of data ready to be used for prediction.
 
             Parameters:
                     data (pandas.DataFrame): The dataframe to be cleaned.
