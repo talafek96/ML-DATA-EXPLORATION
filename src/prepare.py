@@ -29,6 +29,8 @@ class DataImputer:
         for i in range(len(self.train_df[feature])):
             if self.train_df.loc[i, feature] is self.missing_marker:
                 self.train_df.loc[i, feature] = random.choice(items)
+        
+        for i in range(len(self.data_to_clean[feature])):
             if self.data_to_clean.loc[i, feature] is self.missing_marker:
                 self.data_to_clean.loc[i, feature] = random.choice(items)
         return
@@ -245,20 +247,25 @@ class data_extraction:
         cols = data.columns.tolist()
         cols = cols[:11] + symptoms_df.columns.tolist() + \
             cols[11:len(cols) - symptoms_df.shape[1]]
-        data = data[cols]
+        self.data = data[cols]
         return
 
-    def extract_blood_A(self):
-        blood_A = list()
+    def extract_blood_ohe(self):
+        blood_types = list()
+        rh_enzymes = list()
+        trans_dict = {"A+": "A", "A-": "A",
+                    "B+": "B", "B-": "B",
+                    "AB+": "AB", "AB-": "AB",
+                    "O+": "O", "O-": "O"}
         for blood in self.data.blood_type:
-            if blood is np.nan:
-                blood_A.append(np.nan)
-            elif (blood == 'A+') or (blood == 'A-'):
-                blood_A.append(1)
-            else:
-                blood_A.append(-1)
-        self.data.insert(6, "blood_A", blood_A)
-        self.data.drop(labels=["blood_type"], axis=1, inplace=True)
+            blood_types.append(blood if blood is np.NaN else trans_dict[blood])
+            rh_enzymes.append(blood if blood is np.NaN else blood[-1])
+        
+        blood_ohe = pd.get_dummies(pd.Series(blood_types), dummy_na=False, prefix="blood")
+        rh_ohe = pd.get_dummies(pd.Series(rh_enzymes), dummy_na=True, prefix="blood")
+        full_blood_ohe: pd.DataFrame = pd.concat([blood_ohe, rh_ohe], axis=1)
+        for column in full_blood_ohe.columns[::-1]:
+            self.data.insert(5, column=column, value=full_blood_ohe[column])
         return
 
     def extract_zip_code(self):
@@ -275,9 +282,9 @@ class data_extraction:
 
     def apply_all(self):
         self.extract_symptoms()
-        self.extract_blood_A()
+        self.extract_blood_ohe()
         self.extract_zip_code()
-        return
+        return self.data
 
 
 def date_to_num(date: str) -> int:
@@ -286,7 +293,7 @@ def date_to_num(date: str) -> int:
     return int(match.group(1) + match.group(2) + match.group(3))
 
 
-def imput_data(data, train):
+def imput_data(data_to_clean, train):
     FEATURES_TO_IMPUTE = ['weight', 'age', 'sex', 'zip_code',
                           'num_of_siblings', 'happiness_score', 'household_income',
                           'fever', 'low_appetite', 'shortness_of_breath', 'cough',
@@ -303,7 +310,7 @@ def imput_data(data, train):
         # 'y_location': 'median',
         'num_of_siblings': 'median',
         'happiness_score': 'median',
-        'household_income': 'bivariate_median',  # with age
+        'household_income': 'bivariate_median', # with age
         'fever': 'arbitrary',
         'low_appetite': 'arbitrary',
         'shortness_of_breath': 'arbitrary',
@@ -311,17 +318,17 @@ def imput_data(data, train):
         'headache': 'arbitrary',
         # 'pcr_date': 'median',
         'conversations_per_day': 'median',
-        'sugar_levels': 'bivariate_median',  # with weight
+        'sugar_levels': 'bivariate_median', # with weight
         'sport_activity': 'median',
         'PCR_01': 'median',
-        'PCR_02': 'bivariate_median',  # with age
+        'PCR_02': 'bivariate_median', # with PCR_01
         'PCR_03': 'median',
-        'PCR_04': 'median',
-        'PCR_05': 'bivariate_median',  # with PCR_06
-        'PCR_06': 'bivariate_median',  # with PCR_10
-        'PCR_07': 'bivariate_median',  # with PCR_10
-        'PCR_08': 'bivariate_median',  # with PCR_04
-        'PCR_09': 'bivariate_median',  # with PCR_08
+        'PCR_04': 'bivariate_median', # with PCR_03
+        'PCR_05': 'bivariate_median', # with PCR_06
+        'PCR_06': 'bivariate_median', # with PCR_10
+        'PCR_07': 'bivariate_median', # with PCR_10
+        'PCR_08': 'bivariate_median', # with PCR_04
+        'PCR_09': 'bivariate_median', # with PCR_10
         'PCR_10': 'median',
     }
     instructions = {
@@ -333,16 +340,17 @@ def imput_data(data, train):
         'cough': 0,
         'headache': 0,
         'sugar_levels': ('weight', 5),
-        'PCR_02': ('age', 2),
-        'PCR_05': ('PCR_06', 1),
-        'PCR_06': ('PCR_10', 0.5),
-        'PCR_07': ('PCR_10', 0.5),
+        'PCR_02': ('PCR_01', 0.05),
+        'PCR_04': ('PCR_03', 1),
+        'PCR_05': ('PCR_06', 1), 
+        'PCR_06': ('PCR_10', 0.5), 
+        'PCR_07': ('PCR_10', 0.5), 
         'PCR_08': ('PCR_04', 15),
-        'PCR_09': ('PCR_08', 1),
+        'PCR_09': ('PCR_08', 1), 
     }
-    di = DataImputer(train, data, FEATURES_TO_IMPUTE, strat_dict, instructions)
+    di = DataImputer(train, data_to_clean, FEATURES_TO_IMPUTE, strat_dict, instructions)
     di.impute_data()
-    DataImputer.impute_blood_ohe(train, data)
+    DataImputer.impute_blood_ohe(train, data_to_clean)
     return
 
 
@@ -364,8 +372,8 @@ def prepare_data(data, training_data):
     # Extract the new features:
     train_ex = data_extraction(train_copy)
     data_ex = data_extraction(data_copy)
-    train_ex.apply_all()
-    data_ex.apply_all()
+    train_copy = train_ex.apply_all()
+    data_copy = data_ex.apply_all()
 
     # Clean outliers:
     outlier_cleaner = OutlierCleaner(train_copy, data_copy)
@@ -384,5 +392,5 @@ def prepare_data(data, training_data):
     # Perform feature selection:
     cols_to_keep = ['zip_code', 'blood_A', 'num_of_siblings', 'shortness_of_breath', 'fever',
                     'sugar_levels', 'PCR_01', 'PCR_02', 'PCR_03', 'PCR_05', 'PCR_06', 'PCR_07', 'PCR_10']
-    data_copy = data_copy[[cols_to_keep]]
+    data_copy = data_copy[cols_to_keep]
     return data_copy
