@@ -1,52 +1,78 @@
 import numpy as np
+from numpy.core.numeric import outer
 import pandas as pd
 import random
 import re
 
+# Can improve: on bivariate median, add a cache for all the (index, bin_size) calculations for reuse.
+
 
 class DataImputer:
-    def __init__(self, dataframe, features, strategy_dict, instructions_dict=dict(), missing_marker=np.NaN):
+    def __init__(self, train_df, data_to_clean, features, strategy_dict, instructions_dict=dict(), missing_marker=np.NaN):
         self.strats = strategy_dict
+        self.data_to_clean: pd.DataFrame = data_to_clean
         self.instructions_dict = instructions_dict
-        self.df = dataframe.copy()
+        self.train_df: pd.DataFrame = train_df
         self.missing_marker = missing_marker
         self.to_impute = features
         return
 
     def __median_impute(self, feature):
-        median = self.df[feature].median()
-        self.df[feature] = self.df[feature].fillna(median)
+        median = self.train_df[feature].median()
+        self.train_df[feature] = self.train_df[feature].fillna(median)
+        self.data_to_clean[feature] = self.data_to_clean[feature].fillna(
+            median)
         return
 
     def __random(self, feature):
-        items = list(self.df[feature].value_counts().index)
-        for i in range(len(self.df[feature])):
-            if self.df.loc[i, feature] is self.missing_marker:
-                self.df.loc[i, feature] = random.choice(items)
+        items = list(self.train_df[feature].value_counts().index)
+        for i in range(len(self.train_df[feature])):
+            if self.train_df.loc[i, feature] is self.missing_marker:
+                self.train_df.loc[i, feature] = random.choice(items)
+            if self.data_to_clean.loc[i, feature] is self.missing_marker:
+                self.data_to_clean.loc[i, feature] = random.choice(items)
         return
 
     def __arbitrary(self, feature, constant):
-        self.df[feature] = self.df[feature].fillna(constant)
+        self.train_df[feature] = self.train_df[feature].fillna(constant)
+        self.data_to_clean[feature] = self.data_to_clean[feature].fillna(
+            constant)
         return
 
     def __frequent(self, feature):
-        frequent_category = self.df[feature].value_counts().index[0]
-        self.df[feature] = self.df[feature].fillna(frequent_category)
+        frequent_category = self.train_df[feature].value_counts().index[0]
+        self.train_df[feature] = self.train_df[feature].fillna(
+            frequent_category)
+        self.data_to_clean[feature] = self.data_to_clean[feature].fillna(
+            frequent_category)
         return
 
     def __bivariate_median(self, feature, secondary, init_bin_size=0):
-        for i in range(self.df.shape[0]):
-            if np.isnan(self.df.loc[i, feature]):
-                tmp_secondary = self.df[secondary][i]
+        for i in range(self.train_df.shape[0]):
+            if np.isnan(self.train_df.loc[i, feature]):
+                tmp_secondary = self.train_df[secondary][i]
                 tmp_bin_size = init_bin_size
-                filtered_by_secondary = self.df[(self.df[secondary] >= tmp_secondary - tmp_bin_size) & (
-                    self.df[secondary] <= tmp_secondary + tmp_bin_size)]
+                filtered_by_secondary = self.train_df[(self.train_df[secondary] >= tmp_secondary - tmp_bin_size) & (
+                    self.train_df[secondary] <= tmp_secondary + tmp_bin_size)]
                 while filtered_by_secondary[pd.notna(filtered_by_secondary[feature])].shape[0] == 0:
                     tmp_bin_size += 1
-                    filtered_by_secondary = self.df[(self.df[secondary] >= tmp_secondary - tmp_bin_size) & (
-                        self.df[secondary] <= tmp_secondary + tmp_bin_size)]
+                    filtered_by_secondary = self.train_df[(self.train_df[secondary] >= tmp_secondary - tmp_bin_size) & (
+                        self.train_df[secondary] <= tmp_secondary + tmp_bin_size)]
                 bivariate_median = filtered_by_secondary[feature].median()
-                self.df.loc[i, feature] = bivariate_median
+                self.train_df.loc[i, feature] = bivariate_median
+
+        for i in range(self.data_to_clean.shape[0]):
+            if np.isnan(self.data_to_clean.loc[i, feature]):
+                tmp_secondary = self.train_df[secondary][i]
+                tmp_bin_size = init_bin_size
+                filtered_by_secondary = self.train_df[(self.train_df[secondary] >= tmp_secondary - tmp_bin_size) & (
+                    self.train_df[secondary] <= tmp_secondary + tmp_bin_size)]
+                while filtered_by_secondary[pd.notna(filtered_by_secondary[feature])].shape[0] == 0:
+                    tmp_bin_size += 1
+                    filtered_by_secondary = self.train_df[(self.train_df[secondary] >= tmp_secondary - tmp_bin_size) & (
+                        self.train_df[secondary] <= tmp_secondary + tmp_bin_size)]
+                bivariate_median = filtered_by_secondary[feature].median()
+                self.data_to_clean.loc[i, feature] = bivariate_median
         return
 
     def impute_data(self):
@@ -62,11 +88,11 @@ class DataImputer:
             elif self.strats[feature] == 'bivariate_median' or self.strats[feature] == 'bivariate':
                 self.__bivariate_median(
                     feature, self.instructions_dict[feature][0], self.instructions_dict[feature][1])
-        return self.df
+        return self.train_df
 
     @staticmethod
-    def impute_blood_ohe(main_df, df_to_impute):
-        frequent_blood = main_df.blood_type.value_counts().index[0]
+    def impute_blood_ohe(train_df: pd.DataFrame, df_to_impute: pd.DataFrame) -> None:
+        frequent_blood = train_df.blood_type.value_counts().index[0]
         regex = r'([ABO]{1,2})([+-])'
         match = re.search(regex, frequent_blood)
         blood_label = 'blood_' + match.group(1)
@@ -80,55 +106,78 @@ class DataImputer:
 
 
 class OutlierCleaner:
-    def __init__(self, df: pd.DataFrame):
-        self.df = df
+    def __init__(self, df: pd.DataFrame, data_to_clean: pd.DataFrame):
+        self.train_df = df
+        self.data_to_clean = data_to_clean
         return
 
     def __z_score_clean(self, column, lowest, highest):
         if lowest is None:
-            lowest = self.df[column].mean() - 3*self.df[column].std()
+            lowest = self.train_df[column].mean() - 3 * \
+                self.train_df[column].std()
         if highest is None:
-            highest = self.df[column].mean() + 3*self.df[column].std()
-        self.df[column] = np.where(
-            self.df[column] > highest,
+            highest = self.train_df[column].mean(
+            ) + 3*self.train_df[column].std()
+        self.train_df[column] = np.where(
+            self.train_df[column] > highest,
             highest,
             np.where(
-                self.df[column] < lowest,
+                self.train_df[column] < lowest,
                 lowest,
-                self.df[column]
+                self.train_df[column]
+            )
+        )
+        self.data_to_clean[column] = np.where(
+            self.data_to_clean[column] > highest,
+            highest,
+            np.where(
+                self.data_to_clean[column] < lowest,
+                lowest,
+                self.data_to_clean[column]
             )
         )
 
     def __iqr_clean(self, column, lowest, highest):
-        percentile25 = self.df[column].quantile(0.25)
-        percentile75 = self.df[column].quantile(0.75)
+        percentile25 = self.train_df[column].quantile(0.25)
+        percentile75 = self.train_df[column].quantile(0.75)
         iqr = percentile75 - percentile25
         if lowest is None:
             lowest = percentile25 - 1.5*iqr
         if highest is None:
             highest = percentile75 + 1.5*iqr
-        self.df[column] = np.where(
-            self.df[column] > highest,
+        self.train_df[column] = np.where(
+            self.train_df[column] > highest,
             highest,
             np.where(
-                self.df[column] < lowest,
+                self.train_df[column] < lowest,
                 lowest,
-                self.df[column]
+                self.train_df[column]
+            )
+        )
+        self.data_to_clean[column] = np.where(
+            self.data_to_clean[column] > highest,
+            highest,
+            np.where(
+                self.data_to_clean[column] < lowest,
+                lowest,
+                self.data_to_clean[column]
             )
         )
 
+    # Consider making this a @staticmethod func and pass in a df to filter.
     def z_score_filter(self, column):
-        highest = self.df[column].mean() + 3*self.df[column].std()
-        lowest = self.df[column].mean() - 3*self.df[column].std()
-        return self.df[(self.df[column] > highest) | (self.df[column] < lowest)]
+        highest = self.train_df[column].mean() + 3*self.train_df[column].std()
+        lowest = self.train_df[column].mean() - 3*self.train_df[column].std()
+        return self.train_df[(self.train_df[column] > highest) | (self.train_df[column] < lowest)]
 
+    # Consider making this a @staticmethod func and pass in a df to filter.
     def iqr_filter(self, column):
-        percentile25 = self.df[column].quantile(0.25)
-        percentile75 = self.df[column].quantile(0.75)
+        percentile25 = self.train_df[column].quantile(0.25)
+        percentile75 = self.train_df[column].quantile(0.75)
         iqr = percentile75 - percentile25
         highest = percentile75 + 1.5*iqr
         lowest = percentile25 - 1.5*iqr
-        return self.df[(self.df[column] > highest) | (self.df[column] < lowest)]
+        return self.train_df[(self.train_df[column] > highest) | (self.train_df[column] < lowest)]
 
     def clean_outliers(self, column, filter, lowest=None, highest=None):
         '''
@@ -144,12 +193,12 @@ class OutlierCleaner:
                         The dataframe managed in the class (the original, to allow pipelining).
         '''
         if filter.lower() == 'z_score':
-            self.__z_score_clean(self.df, column, lowest, highest)
+            self.__z_score_clean(column, lowest, highest)
         elif filter.lower() == 'iqr':
-            self.__iqr_clean(self.df, column, lowest, highest)
+            self.__iqr_clean(column, lowest, highest)
         else:
             raise Exception("Method not supported.")
-        return self.df
+        return self.train_df
 
 
 class SymptomExtracter:
@@ -179,10 +228,120 @@ class SymptomExtracter:
         return res
 
 
+class data_extraction:
+    def __init__(self, df) -> None:
+        self.data: pd.DataFrame = df
+        return
+
+    # TODO: Realign the columns
+    def extract_symptoms(self):
+        sm = SymptomExtracter(self.data)
+        symptoms_df = pd.DataFrame([sm.getSymptomList(self.data, i) for i in range(
+            self.data.shape[0])], columns=list(sm.symptom_set))
+        data = self.data.join(symptoms_df)
+        data.drop(labels=["symptoms"], axis=1, inplace=True)
+        cols = data.columns.tolist()
+        cols = cols[:11] + symptoms_df.columns.tolist() + \
+            cols[11:len(cols) - symptoms_df.shape[1]]
+        data = data[cols]
+        return
+
+    def extract_blood_A(self):
+        blood_A = list()
+        for blood in self.data.blood_type:
+            if blood is np.nan:
+                blood_A.append(np.nan)
+            elif (blood == 'A+') or (blood == 'A-'):
+                blood_A.append(1)
+            else:
+                blood_A.append(-1)
+        self.data.insert(6, "blood_A", blood_A)
+        self.data.drop(labels=["blood_type"], axis=1, inplace=True)
+        return
+
+    def extract_zip_code(self):
+        zip_list = list()
+        for address in self.data.address:
+            if address is not np.NaN:
+                match = re.search(r'[A-Z]{2}\s+(\d+)$', address)
+                zip_list.append(int(match.group(1)))
+            else:
+                zip_list.append(np.NaN)
+        self.data.insert(5, "zip_code", zip_list)
+        self.data.drop(labels='address', inplace=True, axis=1)
+        return
+
+    def apply_all(self):
+        self.extract_symptoms()
+        self.extract_blood_A()
+        self.extract_zip_code()
+        return
+
+
 def date_to_num(date: str) -> int:
     regex = r'(\d{4})-(\d{2})-(\d{2})'
     match = re.search(regex, date)
     return int(match.group(1) + match.group(2) + match.group(3))
+
+
+def imput_data(data, train):
+    FEATURES_TO_IMPUTE = ['weight', 'age', 'sex', 'zip_code', 'x_location', 'y_location',
+                          'num_of_siblings', 'happiness_score', 'household_income',
+                          'fever', 'low_appetite', 'shortness_of_breath', 'cough',
+                          'headache', 'pcr_date', 'conversations_per_day', 'PCR_10',
+                          'sugar_levels', 'sport_activity', 'PCR_01', 'PCR_02',
+                          'PCR_03', 'PCR_04', 'PCR_06', 'PCR_05', 'PCR_07',
+                          'PCR_08', 'PCR_09']
+    strat_dict = {
+        'age': 'bivariate_median',  # with weight
+        'sex': 'random',
+        'weight': 'median',
+        'zip_code': 'median',
+        'x_location': 'median',
+        'y_location': 'median',
+        'num_of_siblings': 'median',
+        'happiness_score': 'median',
+        'household_income': 'bivariate_median',  # with age
+        'fever': 'arbitrary',
+        'low_appetite': 'arbitrary',
+        'shortness_of_breath': 'arbitrary',
+        'cough': 'arbitrary',
+        'headache': 'arbitrary',
+        'pcr_date': 'median',
+        'conversations_per_day': 'median',
+        'sugar_levels': 'bivariate_median',  # with weight
+        'sport_activity': 'median',
+        'PCR_01': 'median',
+        'PCR_02': 'bivariate_median',  # with age
+        'PCR_03': 'median',
+        'PCR_04': 'median',
+        'PCR_05': 'bivariate_median',  # with PCR_06
+        'PCR_06': 'bivariate_median',  # with PCR_10
+        'PCR_07': 'bivariate_median',  # with PCR_10
+        'PCR_08': 'bivariate_median',  # with PCR_04
+        'PCR_09': 'bivariate_median',  # with PCR_08
+        'PCR_10': 'median',
+    }
+    instructions = {
+        'age': ('weight', 5),
+        'household_income': ('age', 2),
+        'fever': 0,
+        'low_appetite': 0,
+        'shortness_of_breath': 0,
+        'cough': 0,
+        'headache': 0,
+        'sugar_levels': ('weight', 5),
+        'PCR_02': ('age', 2),
+        'PCR_05': ('PCR_06', 1),
+        'PCR_06': ('PCR_10', 0.5),
+        'PCR_07': ('PCR_10', 0.5),
+        'PCR_08': ('PCR_04', 15),
+        'PCR_09': ('PCR_08', 1),
+    }
+    di = DataImputer(train, data, FEATURES_TO_IMPUTE, strat_dict, instructions)
+    di.impute_data()
+    DataImputer.impute_blood_ohe(train, data)
+    return
 
 
 def prepare_data(data, training_data):
@@ -196,4 +355,32 @@ def prepare_data(data, training_data):
             Returns:
                     clean_data (pandas.DataFrame): A *copy* of data after it has been cleaned relatively to the provided training_data.
     '''
-    pass
+    # Copy the input dataframes:
+    data_copy = data.copy()
+    train_copy = training_data.copy()
+
+    # Extract the new features:
+    train_ex = data_extraction(train_copy)
+    data_ex = data_extraction(data_copy)
+    train_ex.apply_all()
+    data_ex.apply_all()
+
+    # Clean outliers:
+    outlier_cleaner = OutlierCleaner(train_copy, data_copy)
+    z_score_set = {'sugar_levels', 'PCR_01',
+                   'PCR_02', 'PCR_06', 'PCR_07', 'PCR_10'}
+#   iqr_set = {'num_of_siblings', 'PCR_03', 'PCR_05'}
+    features_to_clean = ['num_of_siblings', 'sugar_levels', 'PCR_01',
+                         'PCR_02', 'PCR_03', 'PCR_05', 'PCR_06', 'PCR_07', 'PCR_10']
+    for feature in features_to_clean:
+        outlier_cleaner.clean_outliers(
+            feature, 'z_score' if feature in z_score_set else 'iqr')
+
+    # Impute missing data:
+    imput_data(data_copy, train_copy)
+
+    # Perform feature selection:
+    cols_to_keep = ['zip_code', 'blood_A', 'num_of_siblings', 'shortness_of_breath', 'fever',
+                    'sugar_levels', 'PCR_01', 'PCR_02', 'PCR_03', 'PCR_05', 'PCR_06', 'PCR_07', 'PCR_10']
+    data_copy = data_copy[[cols_to_keep]]
+    return data_copy
