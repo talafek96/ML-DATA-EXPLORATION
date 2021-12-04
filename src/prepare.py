@@ -184,12 +184,14 @@ class OutlierCleaner:
         Cleans the outliers of the column of the dataframe managed in the class *in-place*.
 
                 Parameters:
+                ----------
                         column (str): The feature's column to be cleaned from outliers.
                         filter (str): The cleaning method. Either 'z-score' or 'iqr'.
                         lowest (Optional[int]): If the filter 'iqr' was chosen and lowest was stated, the bottom bound will be set to this value.
                         highest (Optional[int]): If the filter 'iqr' was chosen and highest was stated, the upper bound will be set to this value.
 
                 Returns:
+                -------
                         The dataframe managed in the class (the original, to allow pipelining).
         '''
         if filter.lower() == 'z_score':
@@ -236,7 +238,7 @@ class data_extraction:
     # TODO: Realign the columns
     def extract_symptoms(self):
         sm = SymptomExtracter(self.data)
-        symptoms_df = pd.DataFrame([sm.getSymptomList(self.data, i) for i in range(
+        symptoms_df = pd.DataFrame([sm.getSymptomList(i) for i in range(
             self.data.shape[0])], columns=list(sm.symptom_set))
         data = self.data.join(symptoms_df)
         data.drop(labels=["symptoms"], axis=1, inplace=True)
@@ -285,10 +287,10 @@ def date_to_num(date: str) -> int:
 
 
 def imput_data(data, train):
-    FEATURES_TO_IMPUTE = ['weight', 'age', 'sex', 'zip_code', 'x_location', 'y_location',
+    FEATURES_TO_IMPUTE = ['weight', 'age', 'sex', 'zip_code',
                           'num_of_siblings', 'happiness_score', 'household_income',
                           'fever', 'low_appetite', 'shortness_of_breath', 'cough',
-                          'headache', 'pcr_date', 'conversations_per_day', 'PCR_10',
+                          'headache', 'conversations_per_day', 'PCR_10',
                           'sugar_levels', 'sport_activity', 'PCR_01', 'PCR_02',
                           'PCR_03', 'PCR_04', 'PCR_06', 'PCR_05', 'PCR_07',
                           'PCR_08', 'PCR_09']
@@ -297,8 +299,8 @@ def imput_data(data, train):
         'sex': 'random',
         'weight': 'median',
         'zip_code': 'median',
-        'x_location': 'median',
-        'y_location': 'median',
+        # 'x_location': 'median',
+        # 'y_location': 'median',
         'num_of_siblings': 'median',
         'happiness_score': 'median',
         'household_income': 'bivariate_median',  # with age
@@ -307,7 +309,7 @@ def imput_data(data, train):
         'shortness_of_breath': 'arbitrary',
         'cough': 'arbitrary',
         'headache': 'arbitrary',
-        'pcr_date': 'median',
+        # 'pcr_date': 'median',
         'conversations_per_day': 'median',
         'sugar_levels': 'bivariate_median',  # with weight
         'sport_activity': 'median',
