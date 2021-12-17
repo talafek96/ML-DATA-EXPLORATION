@@ -368,6 +368,9 @@ def prepare_data(data, training_data):
             Returns:
                     clean_data (pandas.DataFrame): A *copy* of data after it has been cleaned relatively to the provided training_data.
     '''
+    # Define the targets:
+    targets = [('risk', lambda x: 1 if x == 'High' else -1), ('spread',
+                                                              lambda x: 1 if x == 'High' else -1), ('covid', lambda x: 1 if x == True else -1)]
     # Copy the input dataframes:
     data_copy = data.copy()
     train_copy = training_data.copy()
@@ -397,4 +400,11 @@ def prepare_data(data, training_data):
                     'sugar_levels', 'PCR_01', 'PCR_02', 'PCR_03', 'PCR_05', 'PCR_06', 'PCR_07', 'PCR_10',
                     'risk', 'spread', 'covid']
     data_copy = data_copy[cols_to_keep]
+
+    # Transform the target variable values:
+    pd.options.mode.chained_assignment = None
+    for var in targets:
+        data_copy[var[0]] = data_copy[var[0]].apply(var[1])
+    pd.options.mode.chained_assignment = 'warn'
+
     return data_copy
