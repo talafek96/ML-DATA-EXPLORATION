@@ -382,8 +382,8 @@ def prepare_data(data, training_data):
     outlier_cleaner = OutlierCleaner(train_copy, data_copy)
     z_score_set = {'sugar_levels', 'PCR_01',
                    'PCR_02', 'PCR_06', 'PCR_07'}
-#   iqr_set = {'num_of_siblings', 'PCR_03', 'PCR_05', 'PCR_10'}
-    features_to_clean = ['num_of_siblings', 'sugar_levels', 'PCR_01',
+#   iqr_set = {'household_income', 'num_of_siblings', 'PCR_03', 'PCR_05', 'PCR_10'}
+    features_to_clean = ['household_income', 'num_of_siblings', 'sugar_levels', 'PCR_01',
                          'PCR_02', 'PCR_03', 'PCR_05', 'PCR_06', 'PCR_07', 'PCR_10']
     for feature in features_to_clean:
         outlier_cleaner.clean_outliers(
@@ -393,7 +393,7 @@ def prepare_data(data, training_data):
     imput_data(data_copy, train_copy)
 
     # Perform feature selection:
-    cols_to_keep = ['zip_code', 'blood_A', 'num_of_siblings', 'shortness_of_breath', 'fever',
+    cols_to_keep = ['zip_code', 'blood_A', 'household_income', 'num_of_siblings', 'shortness_of_breath', 'fever',
                     'sugar_levels', 'PCR_01', 'PCR_02', 'PCR_03', 'PCR_05', 'PCR_06', 'PCR_07', 'PCR_10',
                     'risk', 'spread', 'covid']
     data_copy = data_copy[cols_to_keep]
